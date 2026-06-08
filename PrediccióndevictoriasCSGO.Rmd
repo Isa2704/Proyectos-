@@ -1,0 +1,1259 @@
+---
+title: "Trabajo Mineria"
+author: "Matriz 2x1 (Rocío Alabarce Pérez y María Isabel Serrano Delgado)"
+output:
+  word_document: default
+  html_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+Comenzamos elegiendo la semilla según los 4 últimos dígitos de una de las integrantes del equipo, en este caso hemos elegido los dígitos de Rocío.
+
+```{r}
+set.seed(0919)
+```
+
+Cargamos los datos que usaremos para entrenar el modelo y los que utilizaremos para predecir en el apartado final.
+
+```{r}
+CSGO_entrenamiento<-read.csv("CSGO_MD.csv")
+datos_a_predecir<-read.csv("datos_a_predecir.csv")
+```
+
+#### **1. Análisis Exploratorio de Datos**
+
+Para empezar vamos a hacer un vistazo general a la base de datos de entrenamiento:
+
+Vista general de la base de datos.
+
+```{r}
+dim(CSGO_entrenamiento)
+str(CSGO_entrenamiento)
+```
+
+Obtenemos que hay 61205 filas y 97 variables, cada fila es una captura instantánea del estado de una ronda, tomada cada 20 segundos, no una ronda completa. Las 97 variables son las 96 predictoras más la variable objetivo *round_winner*.
+
+```{r}
+summary(CSGO_entrenamiento)
+```
+
+Al ejecutar la función *summary()* destacamos estos hallazgos:
+
+-   Valores -999: Todas las variables numéricas muestran un mínimo de
+    -999, es un código usado para indicar datos faltantes o erróneos.
+    Esto ya lo trataremos en el preprocesamiento.
+
+-   NAs: Hay NAs en casi todas las columnas, son pocos en proporción con
+    entre 96 y 147 NAs por variable.
+
+-   Variables de armas casi siempre a 0: Muchas variables de armas
+    tienen media negativa, arrastrada por los -999 y máximos de 0 o 1.
+    Esto significa que son armas muy raras en competición y
+    probablemente aporten muy poco poder predictivo. Se pueden
+    considerar para la eliminación en el preprocesamiento.
+
+-   bomb_planted y map: Son variables de tipo character. Habrá que
+    convertirlas a factores antes del preprocesamiento.
+
+<br>
+
+#### **Variable objetivo**
+
+```{r}
+table(CSGO_entrenamiento$round_winner)
+prop.table(table(CSGO_entrenamiento$round_winner))
+```
+
+Esta variable ahora mismo es tipo *character*, debemos pasarla a
+*factor* y que cuente solamente con 2 niveles, CT y T, por lo tanto, las
+variables " " y -999 son variables faltantes o erroneas, por lo que en
+el preprocesamiento decidiremos que hacer con ellas.
+
+Observamos que contamos con 110 " " que en proporción representan un
+0.001797 del total de *round_winner* y contamos con 10 "-999" que en
+proporción representan un 0.00016338 del total de *round_winner*.
+
+```{r,warning=FALSE, message=FALSE}
+library(ggplot2)
+ggplot(CSGO_entrenamiento, aes(x = round_winner, y = ct_money, fill = round_winner)) +
+  geom_boxplot() +
+  labs(title = "Distribución del dinero CT según el ganador de la ronda")
+```
+
+El eje X muestra cuatro categorías ("", CT, NA, T), cuando solo debería
+tener dos, CT y T. La función ha detectado cadenas de texto " " y
+valores perdidos en la variable objetivo y los ha tratado como clases
+independientes. 
+
+Si observamos sus cajas, vemos que ninguna supera el 20000 y están aplastadas cerca del 0, lo que indica que son registros residuales o corruptos.
+
+Una vez descartada la información que aporta ruido, nos centramos en las
+dos cajas principales.
+
+Observando la caja de CT. Su mediana se sitúa en torno a los 7.000\$.
+
+Observando ahora la caja de T. Su mediana cae hasta los 4.000\$.
+
+Existe una correlación directa entre la economía del equipo
+Antiterrorista y su probabilidad de ganar la ronda. Si los CT tienen la
+economía alta, estadísticamente es mucho más probable que ganen.
+
+La caja de CT abarca más altura, aproximadamente desde los 2.000 hasta
+los 19.000\$. Esto indica una gran dispersión, los CT pueden ganar
+rondas teniendo economías muy variables.
+
+La caja de T abarca menos altura, aproximadamente desde los 1.000 hasta
+los 12.000\$.
+
+En la columna T hay un montón de outliers que llegan hasta arriba del
+todo, cerca de 80.000\$.
+
+Mediante este diagrama de cajas analizamos la influencia de la economía
+en el resultado de la ronda. Observamos claramente que cuando el equipo
+Anti-Terrorista (CT) gana la ronda, su mediana de dinero disponible es
+superior y sus valores se concentran más hacia la parte alta de la
+distribución. Por el contrario, en las rondas donde resultan ganadores
+los Terroristas, la distribución del dinero CT se desplaza hacia abajo,
+con una mediana inferior a la media global. Por lo tanto, la economía
+influye en el resultado de ganar o perder, en concreto, tener una
+economía débil tiende a que el equipo pierda.
+
+<br>
+
+#### **Preprocesamiento**
+
+**Valores Faltantes**
+
+Vamos a reemplazar los valores "" y "-999" por NA para facilitar su
+tratamiento en ambas bases de datos, para no realizar este mismo procesamiento dos veces. 
+
+```{r}
+CSGO_entrenamiento[CSGO_entrenamiento == ""] <- NA
+CSGO_entrenamiento[CSGO_entrenamiento == "-999"] <- NA
+CSGO_entrenamiento[CSGO_entrenamiento == -999] <- NA
+datos_a_predecir[datos_a_predecir == ""] <- NA
+datos_a_predecir[datos_a_predecir == "-999"] <- NA
+datos_a_predecir[datos_a_predecir == -999] <- NA
+```
+
+Eliminaremos las filas con valores NA que se encuentren en la variable
+*round_winner*, debido a que no tendría mucho sentido imputar esa
+variable que es nuestra variable predictora, para la base de datos en la que predeciremos no se hará, ya que ésta no ocntiene esa columna.
+
+```{r}
+filas_a_eliminar <- is.na(CSGO_entrenamiento$round_winner) 
+CSGO_entrenamiento1 <- CSGO_entrenamiento[!filas_a_eliminar, ]
+```
+
+Antes de pasar las variables a factor, partiremos nuestra base de datos
+para entrenarla con los modelos, y realizaremos un estudio con el
+porcentaje de datos posterior, depués de realizar esto, las imputaremos.
+
+####Partición de datos
+*Partición de datos*
+
+Partimos los datos en entrenamiento y test
+```{r}
+library(caret)
+indice_entrenamiento <- createDataPartition(CSGO_entrenamiento1$round_winner, p = 0.8, list = FALSE)
+
+datos_train <- CSGO_entrenamiento1[indice_entrenamiento, ]
+datos_test  <- CSGO_entrenamiento1[-indice_entrenamiento, ]
+```
+
+**Imputación**
+
+Observamos que existen datos faltantes en muchas de las variables, por
+lo que tenemos que tomar una decision de que vamos a hacer con esos
+datos faltantes, en nuestro caso vamos a imputar. Existen bastantes
+métodos de imputación que son los de Hot deck, los de tendencia central
+que son media, mediana y moda, los de Regresión y clasificación y PMM.
+Cada uno de ellos es mas conveniente en alguno tipos de casos, asi que
+vamos a identificar para cada variable que tecnica de imputacion es la
+conveniente:
+
+1.  Imputación por PMM: es un método que estima los valores perdidos
+    buscando las observaciones más similares o cercanas dentro del resto
+    de los datos; para rellenar el espacio vacío, elige la opción más
+    frecuente entre ellos si es categórica, se utiliza principalmente
+    para variables discretas donde solo es posible tener números
+    enteros. Este método de imputación no lo vamos a utilizar a pesar de
+    sus buenas predicciones debido a su gran tiempo de ejecución.
+
+2.  Imputacion por moda: la vamos a utilizar en las siguientes variables
+    ya que son variables de tipo discreto y categóricas y este método es
+    adecuado en estos casos, en el caso de variables discretas solo es
+    posible tener números enteros, por ejemplo, no tendría sentido tener
+    medio jugador y en el caso de las variables categóricas es el más
+    adecuado, ya que sería imposible calcular su promedio o mediana, por
+    ejemplo en la variable *map*.
+
+**Variables**: ct_players_alive, t_players_alive, ct_grenade_hegrenade ,
+t_grenade_hegrenade, ct_grenade_flashbang , t_grenade_flashbang,
+ct_grenade_smokegrenade , t_grenade_smokegrenade,
+ct_grenade_incendiarygrenade , t_grenade_incendiarygrenade,
+ct_grenade_molotovgrenade , t_grenade_molotovgrenade,
+ct_grenade_decoygrenade , t_grenade_decoygrenade, ct_weapon_ak47 ,
+t_weapon_ak47, ct_weapon_aug , t_weapon_aug, ct_weapon_awp ,
+t_weapon_awp, ct_weapon_bizon , t_weapon_bizon, ct_weapon_cz75auto ,
+t_weapon_cz75auto, ct_weapon_elite , t_weapon_elite, ct_weapon_famas ,
+t_weapon_famas, ct_weapon_g3sg1 , t_weapon_g3sg1, ct_weapon_galilar ,
+t_weapon_galilar, ct_weapon_glock , t_weapon_glock, ct_weapon_m249 ,
+t_weapon_m249, ct_weapon_m4a1s , t_weapon_m4a1s, ct_weapon_m4a4 ,
+t_weapon_m4a4, ct_weapon_mac10 , t_weapon_mac10, ct_weapon_mag7 ,
+t_weapon_mag7, ct_weapon_mp5sd , t_weapon_mp5sd, ct_weapon_mp7 ,
+t_weapon_mp7, ct_weapon_mp9 , t_weapon_mp9, ct_weapon_negev ,
+t_weapon_negev, ct_weapon_nova , t_weapon_nova, ct_weapon_p90 ,
+t_weapon_p90, ct_weapon_r8revolver , t_weapon_r8revolver,
+ct_weapon_sawedoff , t_weapon_sawedoff, ct_weapon_scar20 ,
+t_weapon_scar20, ct_weapon_sg553 , t_weapon_sg553, ct_weapon_ssg08 ,
+t_weapon_ssg08, ct_weapon_ump45 , t_weapon_ump45, ct_weapon_xm1014 ,
+t_weapon_xm1014, ct_weapon_deagle , t_weapon_deagle, ct_weapon_fiveseven
+, t_weapon_fiveseven, ct_weapon_usps , t_weapon_usps, ct_weapon_p250 ,
+t_weapon_p250, ct_weapon_p2000 , t_weapon_p2000, ct_weapon_tec9,
+t_weapon_tec9, ct_helmets, t_helmets, ct_defuse_kits, bomb_planted y
+map.
+
+Imputaremos la base de datos de *entrenamiento*, tambien la del *test* y
+*datos_a_predecir*.
+
+```{r}
+moda <- function(v) {
+  v_limpio <- na.omit(v)
+  tabla_frecuencias <- table(v_limpio)
+  valor_moda <- names(tabla_frecuencias)[which.max(tabla_frecuencias)]
+  if (is.numeric(v)) {
+    return(as.numeric(valor_moda))
+  } else {
+    return(valor_moda)
+  }
+}
+
+columnas_moda <- c(
+  "ct_players_alive", "t_players_alive", "ct_helmets", "t_helmets", "ct_defuse_kits",
+  "ct_grenade_hegrenade", "t_grenade_hegrenade", "ct_grenade_flashbang", "t_grenade_flashbang",
+  "ct_grenade_smokegrenade", "t_grenade_smokegrenade", "ct_grenade_incendiarygrenade", "t_grenade_incendiarygrenade",
+  "ct_grenade_molotovgrenade", "t_grenade_molotovgrenade", "ct_grenade_decoygrenade", "t_grenade_decoygrenade",
+  "ct_weapon_ak47", "t_weapon_ak47", "ct_weapon_aug", "t_weapon_aug",
+  "ct_weapon_awp", "t_weapon_awp", "ct_weapon_bizon", "t_weapon_bizon",
+  "ct_weapon_cz75auto", "t_weapon_cz75auto", "ct_weapon_elite", "t_weapon_elite",
+  "ct_weapon_famas", "t_weapon_famas", "ct_weapon_g3sg1", "t_weapon_g3sg1",
+  "ct_weapon_galilar", "t_weapon_galilar", "ct_weapon_glock", "t_weapon_glock",
+  "ct_weapon_m249", "t_weapon_m249", "ct_weapon_m4a1s", "t_weapon_m4a1s",
+  "ct_weapon_m4a4", "t_weapon_m4a4", "ct_weapon_mac10", "t_weapon_mac10",
+  "ct_weapon_mag7", "t_weapon_mag7", "ct_weapon_mp5sd", "t_weapon_mp5sd",
+  "ct_weapon_mp7", "t_weapon_mp7", "ct_weapon_mp9", "t_weapon_mp9",
+  "ct_weapon_negev", "t_weapon_negev", "ct_weapon_nova", "t_weapon_nova",
+  "ct_weapon_p90", "t_weapon_p90", "ct_weapon_r8revolver", "t_weapon_r8revolver",
+  "ct_weapon_sawedoff", "t_weapon_sawedoff", "ct_weapon_scar20", "t_weapon_scar20",
+  "ct_weapon_sg553", "t_weapon_sg553", "ct_weapon_ssg08", "t_weapon_ssg08",
+  "ct_weapon_ump45", "t_weapon_ump45", "ct_weapon_xm1014", "t_weapon_xm1014",
+  "ct_weapon_deagle", "t_weapon_deagle", "ct_weapon_fiveseven", "t_weapon_fiveseven",
+  "ct_weapon_usps", "t_weapon_usps", "ct_weapon_p250", "t_weapon_p250",
+  "ct_weapon_p2000", "t_weapon_p2000", "ct_weapon_tec9", "t_weapon_tec9",
+  "bomb_planted", "map"
+)
+
+for (col in columnas_moda) {
+  valor_moda <- moda(datos_train[[col]])
+  datos_train[[col]][is.na(datos_train[[col]])] <- valor_moda
+  datos_test[[col]][is.na(datos_test[[col]])] <- valor_moda
+  datos_a_predecir[[col]][is.na(datos_a_predecir[[col]])] <- valor_moda
+}
+```
+
+3.  Imputacion por la mediana: estas se aplica a variables continuas, es
+    mas adecuada que la tecnica de imputar por la media debido a que la
+    mediana nos protege de los valores extremos que distorsionarían la
+    media.
+
+**Variables**: ct_money , t_money, ct_health , t_health, ct_armor ,
+t_armor, time_left, ct_score , t_score.
+
+```{r}
+CSGO_definitivo <- datos_train
+columnas_mediana <- c("ct_money" , "t_money", "ct_health" , "t_health", "ct_armor" , "t_armor", "time_left", "ct_score" , "t_score")
+
+for (col in columnas_mediana) {
+  valor_mediana <- median(CSGO_definitivo[[col]], na.rm = TRUE)
+  CSGO_definitivo[[col]][is.na(CSGO_definitivo[[col]])] <- valor_mediana
+  datos_test[[col]][is.na(datos_test[[col]])] <- valor_mediana
+  datos_a_predecir[[col]][is.na(datos_a_predecir[[col]])] <- valor_mediana
+}
+```
+
+Una vez las variables imputadas y limpias ya si podemos pasarlas a
+factor
+
+*Factorización de Variables*
+
+Comenzamos por la variable objetivo que es **round_winner**:
+
+```{r}
+CSGO_definitivo$round_winner <- as.factor(CSGO_definitivo$round_winner)
+```
+
+Ahora vamos a pasar las variables categóricas *map* y *bomb_planted*,
+debido a que cuentan con dos o más niveles:
+
+```{r}
+# Variable map
+CSGO_definitivo$map <- as.factor(CSGO_definitivo$map)
+datos_test$map <- as.factor(datos_test$map)
+datos_a_predecir$map <- as.factor(datos_a_predecir$map)
+
+# Variable bomb_planted
+CSGO_definitivo$bomb_planted <- as.factor(CSGO_definitivo$bomb_planted)
+datos_test$bomb_planted <- as.factor(datos_test$bomb_planted)
+datos_a_predecir$bomb_planted <- as.factor(datos_a_predecir$bomb_planted)
+```
+
+<br> 
+
+Realizamos un summary para ver como han quedado los datos después
+de todos los cambios anteriores.
+
+```{r}
+summary(CSGO_definitivo)
+```
+
+Tras observar los resultados de la función *summary()*, identificamos 9
+variables que permanecen constantes con un valor de 0 a lo largo de
+todas las observaciones, estas son:
+
+*ct_weapon_bizon*,*ct_weapon_g3sg1*,*ct_weapon_m249*,*t_weapon_m249*,*ct_weapon_negev*,*t_weapon_negev*,*ct_weapon_r8revolver*,*ct_weapon_sawedoff*,*t_weapon_scar20*
+
+Dado que presentan una varianza nula, no aportan a nuestros modelos, por
+lo que procedemos a eliminar estas columnas para optimizar el análisis.
+
+**Eliminación de Filas**
+
+```{r}
+columnasaeliminar<-c("ct_weapon_bizon","ct_weapon_g3sg1","ct_weapon_m249","t_weapon_m249","ct_weapon_negev","t_weapon_negev","ct_weapon_r8revolver","ct_weapon_sawedoff","t_weapon_scar20")
+
+CSGO_definitivo1 <- CSGO_definitivo[, setdiff(names(CSGO_definitivo), columnasaeliminar)]
+datos_test1 <- datos_test[, setdiff(names(datos_test), columnasaeliminar)]
+datos_a_predecir1 <- datos_a_predecir[, setdiff(names(datos_a_predecir), columnasaeliminar)]
+```
+
+*Análisis Exploratorio de Datos y Outliers*
+
+Realizaremos una comparación entre los dos equipos (CT y T) con las
+mismas variables para comprobar si hay outliers importantes.
+
+*Análisis Bivariante de score*
+
+Comenzamos comparando la variable *score* en ambos equipos, esta mide el
+número total de rondas que ha ganado cada equipo hasta ese momento
+exacto de la observación en la partida.
+
+```{r,warning=FALSE, message=FALSE}
+library(ggplot2)
+
+ggplot(CSGO_definitivo1, aes(x = ct_score, y = t_score)) +
+  geom_count(color = "darkblue", alpha = 0.6) + 
+  theme_minimal() +
+  labs(title = "Distribución de Puntuaciones: CT vs T",
+       x = "Puntuación CT",
+       y = "Puntuación T",
+       size = "Frecuencia")
+```
+
+Mediante un gráfico de recuento de frecuencias, analizamos la
+distribución conjunta de las variables *ct_score* y *t_score*,
+observando diferentes zonas clave:
+
+Observamos que los puntos de mayor diámetro se encuentran en la esquina
+inferior izquierda (en torno al cero) indicando que la mayoría de las
+capturas se tomaron al inicio de los enfrentamientos. Esta densidad se
+expande hasta el valor 15 que representa el tiempo de una partida
+estándar, reflejando la regla oficial de que la puntuación límite para
+ganar antes de que se acabe el juego es 16.
+
+La línea diagonal que cruza este bloque central representa los momentos
+exactos en los que ambos equipos van empatados, demostrando que los
+empates son bastante comunes en la muestra.
+
+El detalle más relevante de este gráfico son los puntos más pequeños que
+se extiende en diagonal superando los 15 puntos. Estas observaciones
+representan los *outliers* de nuestro conjunto de datos, partidas largas
+debido a las prórrogas. Al ser situaciones menos frecuentes, el tamaño
+de los puntos es menor.
+
+En conclusión, el espacio completamente vacío en los extremos del
+gráfico confirma que no existen observaciones imposibles debido a que la
+partida termina automáticamente en el momento en que el primer equipo
+llega a 16 puntos, lo que demuestra que los datos están limpios. Dado
+que los *outliers* detectados no son errores de medición sino prórrogas,
+decidimos mantenerlos en el conjunto de datos.
+
+<br>
+
+*Análisis Bivariante de health*
+
+Seguimos comparando la variable *health* en ambos equipos, esta mide la
+suma total de los puntos de vida de todos los jugadores de cada equipo
+en el instante exacto de la observación. El valor máximo al inicio de
+una ronda es de 500 puntos (5 jugadores x 100 puntos de vida).
+
+```{r,warning=FALSE, message=FALSE}
+ggplot(CSGO_definitivo1, aes(x = ct_health, y = t_health)) +
+  geom_count(color = "purple", alpha = 0.6) + 
+  theme_minimal() +
+  labs(title = "Distribución de Salud: CT vs T",
+       x = "Salud CT",
+       y = "Salud T",
+       size = "Frecuencia")
+
+```
+
+La característica más destacada es la gran concentración de datos en la
+esquina superior derecha. Esto revela que en la mayoría de las capturas
+ambos equipos estaban con la vida intacta. Esto es lógico ya que las
+capturas se toman cada 20 segundos, y al inicio de cada ronda siempre
+hay un tiempo de movimiento y posicionamiento sin enfrentamientos,
+generando múltiples registros de "500-500".
+
+Podemos observar un patrón de cuadrícula con líneas horizontales y
+verticales cerca de los valores 100, 200, 300 y 400. Esto refleja la
+naturaleza del juego: cuando un jugador es eliminado rápidamente (por
+ejemplo, con un tiro a la cabeza) sin recibir daño previo, la salud de
+su equipo cae de golpe en bloques exactos de 100 puntos.
+
+Por último, los puntos aislados y de menor tamaño situados en los
+extremos (arriba a la izquierda y abajo a la derecha) representan los
+*outliers*. Son momentos menos frecuentes donde un equipo ha sido
+prácticamente aniquilado dejándolo con una salud cercana a 0, mientras
+que el equipo contrario ha dominado por completo conservando casi todos
+sus puntos de vida.
+
+<br>
+
+*Análisis Bivariante de armor*
+
+Seguimos comparando la variable *armor* en ambos equipos, esta mide la
+suma total de los puntos de chaleco antibalas de todos los jugadores. Al
+igual que la salud, el límite máximo por equipo es de 500 puntos (5
+jugadores con 100 de armadura cada uno).
+
+```{r}
+ggplot(CSGO_definitivo1, aes(x = ct_armor, y = t_armor)) +
+  geom_count(color = "darkorange", alpha = 0.5) + 
+  theme_minimal() +
+  labs(title = "Distribución del Blindaje: CT vs T",
+       x = "Blindaje CT",
+       y = "Blindaje T",
+       size = "Frecuencia")
+```
+
+yo Se observa un punto de mayor tamaño en la esquina superior derecha.
+Esto indica que la situación más común son las rondas donde ambos
+equipos tienen una economía fuerte que permite a sus cinco jugadores
+llevar la protección al máximo.
+
+Se observa un patrón de cuadrícula muy marcado, con altas
+concentraciones de puntos alineadas en los múltiplos de cien. Esto
+ocurre porque la armadura se compra al inicio de las rondas en bloques
+completos que otorgan 100 puntos por jugador, por lo que la suma total
+del equipo salta en estas fracciones exactas dependiendo de cuántos de
+los cinco integrantes hayan tenido dinero para adquirirla.
+
+Los puntos de menor tamaño esparcidos entre las intersecciones
+principales capturan el desgaste de la armadura durante la partida.
+Cuando los jugadores reciben disparos que no son letales, la protección
+no baja a cero de golpe, sino que pierden puntos de forma progresiva,
+generando estos valores intermedios y dispersos antes de que la ronda
+termine.
+
+<br>
+
+*Análisis Bivariante de money*
+
+Seguimos comparando la variable *money* en ambos equipos, esta variable
+mide la suma del saldo económico de los cinco jugadores en el instante
+de la observación. Sabiendo que el límite máximo acumulable por un
+equipo es de 80.000\$ (16.000\$ por jugador).
+
+```{r}
+ggplot(CSGO_definitivo1, aes(x = ct_money, y = t_money)) +
+  geom_count(color = "darkred", alpha = 0.5) + 
+  theme_minimal() +
+  labs(title = "Distribución del Dinero Total: CT vs T",
+       x = "Dinero Total CT",
+       y = "Dinero Total T",
+       size = "Frecuencia")
+```
+
+Este gráfico nos muestra la gestión de la economía dentro de la partida.
+La característica más destacada es la gran concentración de puntos en la
+esquina inferior izquierda, muy cerca del origen. Esto ocurre porque en
+CSGO la mayor parte del tiempo los equipos gastan casi todo su dinero
+disponible al inicio de la ronda para comprar las mejores armas,
+armaduras y granadas posibles, dejando sus bancos muy cerca de cero. Se
+nota visualmente cómo la densidad de los puntos se extiende formando una
+especie de "L" a lo largo de ambos ejes.
+
+Si nos fijamos en los extremos del gráfico, la escala llega hasta los
+80.000 dólares en ambos ejes, que representa el límite del juego ya que
+cada uno de los 5 jugadores puede acumular un máximo de 16.000 dólares.
+La pequeña concentración de puntos en la esquina superior derecha
+(80.000, 80.000) representa esos momentos de partidas muy largas o
+estancadas donde ambos bandos han alcanzado el máximo dinero posible.
+
+Por otro lado, los puntos más pequeñas y dispersos por la zona central y
+superior del gráfico representan combinaciones económicas mucho más
+inusuales y atípicas. Estos puntos aislados marcan las observaciones con
+las distancias de Mahalanobis más altas, capturando situaciones de
+extrema desigualdad, donde un equipo es inmensamente rico y el otro no
+tiene absolutamente nada, o rondas caóticas con números muy específicos.
+
+<br>
+
+*Análisis Bivariante de helmets*
+
+Seguimos comparando la variable *helmets* en ambos equipos, esta
+variable es discreta y representa el recuento de jugadores que llevan
+equipado un casco. Como los equipos están formados por 5 integrantes, el
+valor máximo es 5.
+
+```{r}
+ggplot(CSGO_definitivo1, aes(x = ct_helmets, y = t_helmets)) +
+  geom_count(color = "darkcyan", alpha = 0.6) + 
+  theme_minimal() +
+  labs(title = "Distribución de Cascos: CT vs T",
+       x = "Número de Cascos CT",
+       y = "Número de Cascos T",
+       size = "Frecuencia")
+```
+
+El detalle más llamativo es el punto gigante situado en el origen (0,0).
+Esto indica que el escenario más frecuente en todas las capturas es que
+ninguno de los jugadores de la partida lleve protección en la cabeza. Si
+observamos el resto de la cuadrícula, podemos notar otros puntos de gran
+tamaño en los extremos. La coordenada (5, 5) representa los
+enfrentamientos tardíos o decisivos donde ambos equipos tienen la
+economía al máximo. Los vértices asimétricos ,(5, 0) y (0, 5), ilustran
+las rondas de castigo. Capturan esas situaciones donde un bando va
+totalmente armado (5 cascos) mientras que el otro está completamente
+desprotegido (0 cascos).
+
+<br>
+
+*Análisis Bivariante de players_alive*
+
+Seguimos comparando la variable *players_alive* en ambos equipos, esta
+variable tambien es discreta, se refiere al tamaño de los equipos. El
+valor mínimo es 0 y el máximo es 5.
+
+```{r}
+ggplot(CSGO_definitivo1, aes(x = ct_players_alive, y = t_players_alive)) +
+  geom_count(color = "darkviolet", alpha = 0.6) + 
+  theme_minimal() +
+  labs(title = "Distribución de Jugadores Vivos: CT vs T",
+       x = "Jugadores Vivos CT",
+       y = "Jugadores Vivos T",
+       size = "Frecuencia")
+```
+
+El detalle más evidente y dominante es el punto gigante en la esquina
+superior derecha (5,5). Esto nos revela que la mayoría de las capturas
+suceden cuando los diez integrantes de la partida siguen en pie. Este
+patrón es lógico porque cada ronda comienza obligatoriamente con un 5
+contra 5 y, dado que las instantáneas se registran cada 20 segundos, el
+sistema acumula muchísimas capturas iniciales mientras los equipos
+compran, se despliegan y se posicionan en el mapa antes del primer
+tiroteo letal.
+
+Asimetría en la Victoria (La ausencia del 0 en CT): Otro hallazgo es la
+asimetría de los ejes. Mientras que el eje Y tiene observaciones desde
+valor 0 al 5, en el eje X va del 1 al 5.
+
+Los puntos de tamaño reducido repartidos por el resto de la cuadrícula
+representan su baja frecuencia y demuestran que una vez comienzan los
+disparos, los enfrentamientos son muy rápidos y letales, dando poco
+tiempo a que el servidor tome muchas capturas de situaciones
+intermedias, por ejemplo, 3 contra 3.
+
+<br>
+
+#### Evaluacion entre modelos de clasificacion
+
+*Regresión Logística*
+
+1.  Entrenamiento del Modelo
+
+Entrenamos usando los datos que se encuentran guardados en la variable
+*CSGO_definitivo1*.
+
+```{r}
+modelo_logistico <- glm(round_winner ~ ., data = CSGO_definitivo1, family = "binomial")
+
+summary(modelo_logistico)
+```
+
+Tras observar estos resultados vemos que las variables que en cuyas
+filas aparecen estrellas, son esenciales para ganar la ronda. Dentro de
+ser esencial o no, tenemos distintos "niveles":
+
+-   Una estrella (\*). Representa el umbral estándar para considerar que
+    una variable importa. Aportan una ventaja táctica, pero no
+    garantizan la victoria por sí solas.
+
+-   Dos estrellas (\*\*). Indica una significación muy alta. Son
+    factores que alteran bastante el transcurso de la ronda, aunque con
+    menos importancia que los factores críticos.
+
+-   Tres estrellas (\*\*\*). Es el máximo nivel de importancia. Indica
+    que existe menos de un 0.1% de probabilidad de que el impacto de
+    esta variable sea casualidad.
+
+-   Un punto (.). Es una variable que está en el límite. El modelo
+    detecta que podría tener cierta influencia, pero no hay pruebas
+    estadísticas suficientemente fuertes para afirmarlo.
+
+-   Sin estrellas ( ). Estas variables no aportan ventaja en predecir
+    quién ganará la ronda actual.
+
+Otro detalle a tener cuenta es e signo de Estimate:
+
+-   Si el coeficiente Estimate es negativo, favorece la victoria al
+    equipo Anti-Terrorista.
+
+-   Si el coeficiente es positivo, favorece la victoria al equipo
+    Terrorista.
+
+Las variables económicas y de equipamiento, como la salud, el dinero,
+las bombas y los cascos, tienen un poder predictivo muy alto.
+
+<br>
+
+2.  Predicción con los datos test
+
+Predecimos usando los datos que se encuentran guardados en la variable
+*datos_test1*.
+
+```{r}
+probabilidades <- predict(modelo_logistico, newdata = datos_test1, type = "response")
+
+# Convertimos la probabilidad en una predicción final (CT o T)
+# (Ajusta los nombres "T" y "CT" dependiendo de cómo estén escritos en tu base de datos)
+predicciones_clase <- ifelse(probabilidades > 0.5, "T", "CT")
+
+# Convertimos a factor para que R las entienda como categorías
+predicciones_clase <- as.factor(predicciones_clase)
+datos_test1$round_winner <- as.factor(datos_test1$round_winner)
+```
+
+3.  Evaluación
+
+Aqui vamos a comprobar si la predicción que realzia el modelo de
+regresión logística se adecua a la realidad, eso lo miramos a través de
+la matriz de confusión.
+
+```{r}
+matriz_confusion_rl <- confusionMatrix(predicciones_clase, datos_test1$round_winner)
+print(matriz_confusion_rl)
+```
+
+Nos fijamos en el valor de *Accuracy*, que mide la exactitud. El modelo
+tiene una tasa de acierto global del 74.59%.
+
+Matriz de Confusión:
+
+-   4478 aciertos para CT: El modelo predijo que ganaba CT y
+    efectivamente ganaron ellos.
+
+-   4634 aciertos para T: El modelo predijo que ganaba T y acertó.
+
+-   Los errores están muy equilibrados, 1588 que eran T y dijo que eran
+    CT y 1516 que eran CT y dijo que eran T.
+
+Sensibilidad (0.7471) y Especificidad (0.7448): Estos valores son muy
+similares. El modelo predice igual de bien las victorias de los
+Anti-Terroristas que de los Terroristas.
+
+Kappa (0.4917): Este índice mide la concordancia fuera del azar. Un
+valor cercano a 0.50 se considera una concordancia buena, nuestro valor
+se acerca bastante a ello.
+
+P-Value (\< 2e-16): Estadísticamente se demuestra que es imposible que
+hayamos obtenido el 74.59% de aciertos por azar, por lo que el modelo
+funciona bien.
+
+<br>
+
+*Análisis Discriminante Lineal*
+
+1.  Entrenamiento del Modelo
+
+```{r}
+library(MASS)
+modelo_lda <- lda(round_winner ~ ., data = CSGO_definitivo1)
+modelo_lda
+```
+
+El algoritmo LDA asume que las variables predictoras se distribuyen
+normalmente y busca una combinación lineal de ellas que maximice la
+separación entre las dos clases. Destacamos:
+
+Group means: Esta sección nos muestra el valor promedio de cada variable
+separado por quién terminó ganando la ronda.
+
+-   Economía y Salud: por ejemplo, cuando los Anti-Terroristas ganan, su
+    media de armadura es de 372, pero cuando pierden, su media de
+    armadura cae a 258. Lo mismo ocurre con la salud y el dinero en
+    ambos bandos.
+
+-   En el Factor del Tiempo, las victorias de CT ocurren con una media
+    de 101.8 segundos restantes, mientras que las victorias T suceden
+    con 94.4 segundos. Esto muestra que el equipo Terrorista necesita
+    más tiempo de la ronda para ejecutar sus ataques.
+
+-   Cuando hay una bomba plantada, la media salta de 0.05 en victorias
+    de CT a 0.16 en victorias para T. Esto confirma que plantar la bomba
+    es un punto clave para asegurar la ronda Terrorista.
+
+2.  Predicción con los datos test
+
+```{r}
+predicciones_lda0 <- predict(modelo_lda, newdata = datos_test1)
+predicciones_lda <- predicciones_lda0$class
+predicciones_lda <- as.factor(predicciones_lda)
+datos_test1$round_winner <- as.factor(datos_test1$round_winner)
+```
+
+3.  Evaluación
+
+```{r}
+matriz_confusion_lda <- confusionMatrix(predicciones_lda, datos_test1$round_winner)
+matriz_confusion_lda
+```
+
+Nos fijamos en el valor de *Accuracy*. El modelo tiene una tasa de
+acierto global del 74.62%. Este nuevo modelo ha superado al anterior por
+una cantidad muy pequeña.
+
+Matriz de Confusión:
+
+-   4506 aciertos para CT: El modelo predijo que ganaba CT y
+    efectivamente ganaron ellos.
+
+-   4610 aciertos para T: El modelo predijo que ganaba T y acertó.
+
+-   Los errores están muy equilibrados, 1612 que eran T y dijo que eran
+    CT y 1488 que eran CT y dijo que eran T.
+
+Sensibilidad (0.7518) y Especificidad (0.7409): Estos valores son muy
+similares. El modelo predice igual de bien las victorias de los
+Anti-Terroristas que de los Terroristas.
+
+Kappa (0.4925): Este índice mide la concordancia fuera del azar. Un
+valor cercano a 0.50 se considera una concordancia buena, nuestro valor
+se acerca bastante a ello.
+
+P-Value (\< 2e-16): Estadísticamente se demuestra que es imposible que
+hayamos obtenido el 74.62% de aciertos por azar, por lo que el modelo
+funciona bien.
+
+<br>
+
+*Análisis Discriminante Cuadrático*
+
+1.  Entrenamiento del Modelo
+
+```{r}
+#modelo_qda <- qda(round_winner ~ ., data = CSGO_definitivo1)
+```
+
+Este modelo nos da un error al ejecutarlo, especificamente nos muestra
+*rank deficiency in group T*, esto es debido a que el QDA exige calcular
+una matriz de covarianza para cada clase, CT y T. Se puede dar el caso
+de que algunas armas no estén presentes en alguno de los subconjuntos,
+esto se da en el conjunto Terrorista. Esto genera varianza nula dentro
+de ese grupo, imposibilitando la inversión de la matriz matemática que
+necesita el QDA.
+
+<br>
+
+*Naïve Bayes*
+
+1.  Entrenamiento del Modelo
+
+```{r}
+library(e1071)
+modelo_nb <- naiveBayes(round_winner ~ ., data = CSGO_definitivo1)
+modelo_nb
+```
+
+En la salida observamos que calcula las probabilidades condicionales en
+la que el modelo ha calculado para cada variable su comportamiento
+dependiendo de qué bando gane finalmente. Distinguimos dos tipos de
+variables:
+
+-   Variables Categóricas/Lógicas: Nos muestra directamente la
+    probabilidad porcentual. Por ejemplo, para la variable
+    *bomb_planted*, si los CT ganan la ronda, la bomba solo estaba
+    plantada en el 5.05% de los casos observados. Sin embargo, en las
+    victorias Terroristas, la probabilidad de que la bomba estuviese
+    plantada llega hasta el 16.61%.
+
+-   Variables Continuas: Para métricas numéricas como la vida, el dinero
+    o la cantidad de armas, el algoritmo asume una distribución normal.
+    La columna [,1] representa la Media y la columna [,2] representa la
+    Desviación Típica. Por ejemplo si observamos la variable
+    *ct_health*, vemos que la salud media de los Anti-Terroristas cuando
+    ganan es de 437.9 puntos, pero cuando pierden la ronda, su salud
+    media era de 388.5 puntos.
+
+2.  Predicción con los datos test
+
+```{r}
+predicciones_nb <- predict(modelo_nb, newdata = datos_test1)
+predicciones_nb <- as.factor(predicciones_nb)
+datos_test1$round_winner <- as.factor(datos_test1$round_winner)
+```
+
+3.  Evaluación
+
+```{r}
+matriz_confusion_nb <- confusionMatrix(predicciones_nb, datos_test1$round_winner)
+print(matriz_confusion_nb)
+```
+
+Nos fijamos en el valor de *Accuracy*. El modelo tiene una tasa de
+acierto global del 71.27%. Este nuevo modelo es un poco peor que los
+anteriores.
+
+Matriz de Confusión:
+
+-   4512 aciertos para CT: El modelo predijo que ganaba CT y
+    efectivamente ganaron ellos.
+
+-   4194 aciertos para T: El modelo predijo que ganaba T y acertó.
+
+-   Los errores ya no están equilibrados, muestra que 2028 eran T y dijo
+    que eran CT y 1482 eran CT y dijo que eran T.
+
+Sensibilidad (0.7528) y Especificidad (0.6741): Estos valores ya no son
+similares. Indica que el modelo ha desarrollado un ligero sesgo y
+predice mejor las victorias de los Anti Terroristas que la de los
+Terroristas.
+
+Kappa (0.4261): Este índice se acerca relativamente a 0.50 pero no
+mucho, por lo que podríamos considerar una concordancia moderada.
+
+P-Value (\< 2.2e-16): Estadísticamente se demuestra que es imposible que
+hayamos obtenido el 71.27% de aciertos por azar, por lo que el modelo
+funciona bien.
+
+<br>
+
+*Máquinas de Vectores Soporte*
+
+1.  Entrenamiento del Modelo
+
+```{r}
+modelo_svm <- svm(round_winner ~ ., data = CSGO_definitivo1, kernel = "radial")
+modelo_svm
+```
+
+Las Máquinas de Vectores de Soporte (SVM) operan como una caja negra,
+esto explica que su salida es muy breve. La información relevante que
+muestra es el número de vectores de soporte que es 27255.
+
+2.  Predicción con los datos test
+
+```{r}
+predicciones_svm <- predict(modelo_svm, newdata = datos_test1)
+predicciones_svm <- as.factor(predicciones_svm)
+datos_test1$round_winner <- as.factor(datos_test1$round_winner)
+```
+
+3.  Evaluación
+
+```{r}
+matriz_confusion_svm <- confusionMatrix(predicciones_svm, datos_test1$round_winner)
+matriz_confusion_svm
+```
+
+El modelo ha alcanzado un Accuracy del 77.11% el cual supera
+drásticamente a los algoritmos anteriores.
+
+Matriz de Confusión:
+
+-   4757 aciertos para CT: El modelo predijo que ganaba CT y
+    efectivamente ganaron ellos.
+
+-   4663 aciertos para T: El modelo predijo que ganaba T y acertó.
+
+-   Los errores están equilibrados, muestra que 1559 eran T y dijo que
+    eran CT y 1237 eran CT y dijo que eran T.
+
+Sensibilidad (0.7936) y Especificidad (0.7494): Estos valores son
+similares. El modelo predice igual de bien las victorias de los
+Anti-Terroristas que de los Terroristas.
+
+Kappa (0.5425): Este índice supera a 0.50, el modelo ha pasado a tener
+una concordancia buena frente a la realidad del juego, descontando por
+completo los aciertos por puro azar.
+
+P-Value (\< 2.2e-16): Estadísticamente se demuestra que es imposible que
+hayamos obtenido el 77.11% de aciertos por azar, por lo que el modelo
+funciona muy bien.
+
+<br>
+
+*K-vecinos más cercanos*
+
+Este modelo se intentó llevar a cabo, sin embargo, tras su largo tiempo de ejecución, hemos dedidido descartar este modelo de la comparativa final.
+
+Al realizarlo en un espacio hiperdimensional de casi 90 variables predictoras y someterlo a iteraciones de validación cruzada, el coste computacional crece  hasta volverse muy complicado para hacerlo en un ordenador estándar.
+
+<br>
+
+*Árboles de decisión*
+
+1.  Entrenamiento del Modelo
+
+```{r}
+library(tree)
+
+modelo_arbol <- tree(round_winner ~ ., data = CSGO_definitivo1)
+summary(modelo_arbol)
+```
+
+Esta salida indica que de las casi 90 variables que tiene la base de
+datos el algoritmo se ha quedado con 4 variables, estas son *t_armor*,
+*ct_armor*, *t_helmets* y *time_left*.
+
+Tambien indica que el número de nodos es 8, esto significa que el árbol
+es bastante sencillo ya que solo ha necesitado hacer 8 caminos finales
+para clasificar a todos los miles de jugadores de la base de datos.
+
+Otra salida que devuelve es *Misclassification error rate* que muestra
+el porcentaje de error durante el entrenamiento, esta muestra que se ha
+equivocado un 27.88% de las veces, lo que significa que su nivel de
+acierto (Accuracy) es 100%-27.88% = 72.12%.
+
+2.  Visualización del árbol
+
+```{r}
+plot(modelo_arbol)
+text(modelo_arbol, pretty = 0)
+```
+
+La representación gráfica del Árbol de Decisión nos permite trazar la
+lógica que sigue para predecir al ganador de una ronda.
+
+-   El nodo superior del árbol es la variable más importante, esta es
+    t_armor \< 102.5. Por lo que lo primero que hay que mirar en una
+    partida es si el equipo Terrorista tiene una armadura \< 102.5, si
+    esto se cumple, el modelo se fija inmediatamente en la armadura del
+    rival. Si los Anti-Terroristas tienen ct_armor \< 110.5, el modelo
+    predice una victoria Terrorista (T). Por el contrario, si esto no
+    pasa, el árbol predice una victoria para los Anti-Terroristas (CT),
+    independientemente del tiempo restante.
+
+-   Nos vamos al caso en el que los terroristas tienen t_armor \> 102.5.
+    El modelo vuelve a evaluar la armadura de los CT, ct_armor \< 265.5.
+    Si la armadura CT cumple ct_armor \< 265.5, los Terroristas ganan
+    independientemente del tiempo. Sin embargo, si no se cumple que
+    ct_armor \< 265.5 el modelo examina los cascos del equipo
+    Terrorista, en concreto examina t_helmets\<3.5. Si se cumple que
+    t_helmets\<3.5 se asegura la victoria del equipo CT, pero si no se
+    cumple que t_helmets\<3.5 se debe comprobar si el equipo
+    Anti-Terrorista cuenta con ct_armor \< 406.5, en este caso se
+    asegura la victoria T, en caso contrario (ct_armor\>=406.5), se
+    asegura la victoria de CT.
+
+3.  Predicción con los datos test
+
+```{r}
+
+predicciones_arbol <- predict(modelo_arbol, newdata = datos_test, type = "class")
+predicciones_arbol <- as.factor(predicciones_arbol)
+datos_test$round_winner <- as.factor(datos_test$round_winner)
+```
+
+4.  Evaluación
+
+```{r}
+matriz_confusion_arbol <- confusionMatrix(predicciones_arbol, datos_test$round_winner)
+matriz_confusion_arbol
+```
+
+El modelo ha alcanzado un Accuracy del 72.31%, pierde un poco de
+precisión con respecto a los algoritmos anteriores.
+
+Matriz de Confusión:
+
+-   4841 aciertos para CT: El modelo predijo que ganaba CT y
+    efectivamente ganaron ellos.
+
+-   3993 aciertos para T: El modelo predijo que ganaba T y acertó.
+
+-   Los errores no están equilibrados, muestra que 2229 eran T y dijo
+    que eran CT y 1153 eran CT y dijo que eran T.
+
+Sensibilidad (0.8076) y Especificidad (0.6418): Estos valores ya no son
+similares. Indica que el modelo ha desarrollado un fuerte sesgo y
+predice mejor las victorias de los Anti Terroristas que la de los
+Terroristas.
+
+Kappa (0.4479): Este índice se acerca relativamente a 0.50 pero no
+mucho, por lo que podríamos considerar una concordancia moderada.
+
+P-Value (\< 2.2e-16): Estadísticamente se demuestra que es imposible que
+hayamos obtenido el 72.31% de aciertos por azar, por lo que el modelo
+funciona muy bien.
+
+<br>
+
+*Random Forest*
+
+1.  Entrenamiento del Modelo
+
+```{r}
+library(randomForest)
+library(caret)
+
+modelo_rf <- randomForest(round_winner ~ ., data = CSGO_definitivo1, ntree = 200, importance = TRUE)
+modelo_rf
+```
+
+Esta salida inicial del Bosque Aleatorio nos indica la configuración y
+el rendimiento del modelo. A diferencia de un árbol de decisión simple
+que descarta información, aquí vemos que el algoritmo ha construido un
+complejo bosque formado por un total de 200 árboles simultáneos.
+
+La salida señala que para garantizar la diversidad táctica y evitar
+sesgos, la máquina ha probado aleatoriamente grupos de 9 variables
+diferentes en cada ramificación del bosque, obligando a los árboles a
+buscar patrones ocultos en todos los recursos del juego y no solo en los
+más evidentes.
+
+Otra métrica fundamental que nos devuelve esta salida es la *estimación
+del error OOB*, que actúa como un riguroso examen interno que el modelo
+se hace a sí mismo con los datos que deja fuera de cada árbol mientras
+entrena. Esta métrica muestra un porcentaje de error de tan solo un
+16.44% durante su fase de aprendizaje, lo que significa que su nivel de
+acierto inicial estimado se sitúa en 100% - 16.44%= 83.56%.
+
+Finalmente, la matriz de confusión adjunta confirma esta capacidad
+predictiva, revelando un alto volumen de aciertos cruzados y unas *tasas
+de error por clase* muy bajas y equilibradas en torno al 15% y 17% para
+ambos bandos.
+
+2.  Visualización del árbol
+
+```{r}
+varImpPlot(modelo_rf, main = "Importancia de las Variables en el CS:GO")
+```
+
+Este gráfico de puntos se divide en dos paneles que miden la importancia
+de las variables de dos formas matemáticas distintas.
+
+El panel de la izquierda, llamado *MeanDecreaseAccuracy*, nos dice
+cuánto empeoraría el modelo si le quitáramos esa variable en concreto.
+Aquí vemos que el mapa en el que se juega, seguido muy de cerca por el
+dinero de ambos equipos y la salud de los Terroristas, son los pilares
+de la predicción.
+
+Por otro lado, el panel de la derecha, el *MeanDecreaseGini*, mide cómo
+de bien ayuda cada variable a separar a los ganadores de los perdedores
+en las ramificaciones internas del bosque. En este caso, la armadura de
+los Anti-Terroristas y de los Terroristas, junto al dinero, se revelan
+como las características más puras y decisivas para dividir los datos
+sin cometer errores.
+
+Si nos fijamos en la parte alta de ambas clasificaciones, no hay ni una
+sola arma, lo que realmente lleva hacia la victoria en CSGO es la
+macroeconomía global mediante el dinero acumulado, la protección básica
+a través de la armadura y los cascos, el tiempo restante del reloj y la
+salud general del equipo.
+
+3.  Predicción con los datos test
+
+```{r}
+predicciones_rf <- predict(modelo_rf, newdata = datos_test1)
+predicciones_rf <- as.factor(predicciones_rf)
+datos_test1$round_winner <- as.factor(datos_test1$round_winner)
+```
+
+4.  Evaluación
+
+```{r}
+matriz_confusion_rf <- confusionMatrix(predicciones_rf, datos_test1$round_winner)
+matriz_confusion_rf
+```
+
+El modelo ha alcanzado un Accuracy del 83.7%, es el mejor predictor con
+respecto a los algoritmos anteriores.
+
+Matriz de Confusión:
+
+-   5037 aciertos para CT: El modelo predijo que ganaba CT y
+    efectivamente ganaron ellos.
+
+-   5188 aciertos para T: El modelo predijo que ganaba T y acertó.
+
+-   Los errores no están equilibrados, muestra que 1034 eran T y dijo
+    que eran CT y 957 eran CT y dijo que eran T.
+
+Sensibilidad (0.8403) y Especificidad (0.8338): Estos valores son
+altísimos y extremadamente similares entre sí. Esto indica de forma
+concluyente que el modelo carece de sesgos y es perfectamente
+equilibrado, demostrando exactamente la misma solvencia y precisión
+matemática tanto para predecir las defensas exitosas de los
+Anti-Terroristas como para anticipar los asaltos victoriosos de los
+Terroristas.
+
+Kappa (0.674): Este índice supera el 0.60, siendo un nivel de
+concordancia "bueno" según las escalas académicas de referencia. Esto
+garantiza al modelo ha aprendido a clasificar, descartando casi por
+completo que el éxito de las predicciones se deba al puro azar.
+
+P-Value (\< 2e-16): Estadísticamente se demuestra que es imposible que
+hayamos obtenido el 83.7% de aciertos por azar, por lo que el modelo
+funciona muy bien.
+
+<br>
+
+*Gradient Boosting*
+
+1.  Entrenamiento del Modelo
+
+```{r}
+library(gbm)
+
+modelo_gbm <- train(round_winner ~ ., 
+                    method = "gbm", 
+                    data = CSGO_definitivo1, 
+                    trControl = trainControl(method = "cv", number = 5), 
+                    verbose = FALSE)
+modelo_gbm$bestTune
+```
+
+Los mejores hiperparámetros elegidos por el modelo son:
+
+-   n.trees = 150, 150 árboles son los que indican un equilibrio
+    excelente ya que son suficientes para aprender patrones complejos
+    pero no son tantos como para ralentizar el modelo.
+
+-   interaction.depth = 3, determina la profundidad de cada árbol. Por
+    lo que el modelo evalúa interacciones entre un máximo de tres
+    variables simultáneamente, son árboles relativamente pequeños.
+
+-   shrinkage = 0.1, es la tasa de aprendizaje. Un valor de 0.1
+    significa que cada uno de los 150 árboles solo contribuye un 10% a
+    la decisión final.
+
+-   n.minobsinnode = 10, es el número mínimo de observaciones que debe
+    tener un nodo final para ser considerado válido.
+
+2.  Predicción con los datos test
+
+```{r}
+predicciones_gbm <- predict(modelo_gbm, newdata = datos_test, type = "raw")
+
+predicciones_gbm <- as.factor(predicciones_gbm)
+datos_test$round_winner <- as.factor(datos_test$round_winner)
+```
+
+3.  Evaluación
+
+```{r}
+matriz_confusion_gbm <- confusionMatrix(predicciones_gbm, datos_test$round_winner)
+matriz_confusion_gbm
+```
+
+El modelo ha alcanzado un Accuracy del 75.18%, este es similar a la
+mayoría de los anteriores métodos, a excepción del método anterior.
+
+Matriz de Confusión:
+
+-   4574 aciertos para CT: El modelo predijo que ganaba CT y
+    efectivamente ganaron ellos.
+
+-   4610 aciertos para T: El modelo predijo que ganaba T y acertó.
+
+-   Los errores no están equilibrados, muestra que 1612 eran T y dijo
+    que eran CT y 1420 eran CT y dijo que eran T.
+
+Sensibilidad (0.7631) y Especificidad (0.7409): Estos valores son
+similares entre sí. Esto indica que el modelo tiene poco sesgo y es
+equilibrado, demostrando que es prácticamente igual de bueno para
+predecir las defensas exitosas de los Anti-Terroristas como para
+anticipar los asaltos victoriosos de los Terroristas.
+
+Kappa (0.5037): Este índice supera a 0.50, el modelo tiene una
+concordancia buena, descontando por completo los aciertos por puro azar.
+
+P-Value (\< 2.2e-16): Estadísticamente se demuestra que es imposible que
+hayamos obtenido el 83.7% de aciertos por azar, por lo que el modelo
+funciona muy bien.
+
+<br>
+
+*XGBoost*
+
+En la fase final de nuestro estudio comparativo, el objetivo original
+incluía la implementación del algoritmo XGBoost. Sin embargo, durante la
+fase de ejecución, nos encontramos con limitaciones técnicas que nos
+llevan a error.
+
+#### Resumen de los Modelos 
+
+A continuación vamos a insertar una tabla en la que va a contener los parámetros más importantes de cada modelo.
+
+|                                   |          |        |              |               |
+|-----------------------------------|----------|--------|--------------|---------------|
+| Modelo                            | Accuracy | Kappa  | Sensibilidad | Especificidad |
+| Regresión Logística               | 0.7459   | 0.4917 | 0.7471       | 0.7448        |
+| Análisis Discriminante Lineal     | 0.7462   | 0.4925 | 0.7518       | 0.7409        |
+| Análisis Discriminante Cuadrático | 0.7127   | 0.4261 | 0.7528       | 0.6741        |
+| Maquina de Vectores de Soporte    | 0.7711   | 0.5425 | 0.7936       | 0.7494        |
+| Árboles de Decisión               | 0.7231   | 0.4479 | 0.8076       | 0.6418        |
+| Random Forest                     | 0.837    | 0.674  | 0.8403       | 0.8338        |
+| Boosting                          | 0.7518   | 0.5037 | 0.7631       | 0.7409        |
+
+Tras evaluar y comparar el rendimiento de los ocho algoritmos de aprendizaje automático, el modelo que vamos a seleccionar es Random Forest.
+
+Esto es debido a:
+
+- Accuracy: Random Forest ha alcanzado un 83.70% de acierto en el conjunto de test, es bastante superior en comparación al modelo Máquina de Vectores de Soporte, con un 77.11%, y supera por mucho el rendimiento de los modelos lineales, como el de Regresión Logística y el de LDA, que se estancaban en la barrera del 74%.
+
+- Índice Kappa: El valor Kappa evalúa la concordancia de las predicciones eliminando el factor de acierto por azar. El Random Forest logra un Kappa de 0.674, un valor que se considera de concordancia Casi Perfecta.
+
+- Sensibilidad y Especificidad: Uno de los grandes problemas del Árbol de Decisión simple era su asimetría. El Random Forest, al promediar cientos de árboles diferentes, ha solucionado este defecto, logrando un equilibrio predictivo casi perfecto: Sensibilidad del 84.03% y una Especificidad del 83.38%. 
+
+En definitiva, el modelo Random Forest  no es un modelo lineal, sino de ensamble. Este es el único que ha logrado tener una alta fiabilidad mayor que 83% con la compleja interacción de las casi 90 variables que deciden el ganador en Counter-Strike: Global Offensive.
+
+
+#### Predicción Final
+```{r}
+predicciones_finales <- predict(modelo_rf, newdata = datos_a_predecir1)
+
+write.table(predicciones_finales, 
+            file = "Matriz_2x1.csv",  
+            row.names = FALSE,        
+            col.names = FALSE,        
+            quote = FALSE)            
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

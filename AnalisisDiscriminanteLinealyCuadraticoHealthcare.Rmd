@@ -1,0 +1,505 @@
+---
+title: "Ampliación Métodos"
+author: "Rocío Alabarce Pérez y María Isabel Serrano Delgado"
+date: "2026-05-13"
+output:
+  word_document: default
+  html_document: default
+---
+
+## Análisis Discriminante Lineal
+
+### Caso p=1
+
+En su forma más simple, el LDA trabaja con una única variable predictora $x$, por ejemplo la **edad** del paciente. Asumiendo que sigue una distribución normal dentro de cada enfermedad $k$, el modelo asigna cada paciente a la enfermedad cuya función discriminante $\delta_k(x)$ sea mayor:
+
+$$\delta_k(x) = x \cdot \frac{\mu_k}{\sigma^2} - \frac{\mu_k^2}{2\sigma^2} + \log(\pi_k)$$
+
+Donde $\mu_k$ es la edad media de los pacientes con la enfermedad $k$, $\sigma^2$ la varianza común entre grupos y $\pi_k$ la proporción de pacientes de cada enfermedad en los datos. Esta función es **lineal en** $x$, de ahí el nombre del método.
+
+### Caso p\>1
+
+En la práctica, disponemos de varias variables predictoras simultáneamente. En nuestro datosset podemos usar, por ejemplo, la **edad**, el **importe de facturación** y los **resultados de las pruebas médicas** para clasificar la enfermedad de cada paciente. En este caso, el vector de predictores es:
+
+$$X = (X_1, \ldots, X_p)$$
+
+El LDA asume que este vector sigue una distribución **Gaussiana multivariante** $X \sim N(\boldsymbol{\mu}_k, \boldsymbol{\Sigma})$, donde cada enfermedad $k$ tiene su propio vector de medias $\boldsymbol{\mu}_k$ pero todas comparten la misma matriz de covarianza $\boldsymbol{\Sigma}$. La función discriminante se generaliza como:
+
+$$\delta_k(x) = x^T\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}_k - \frac{1}{2}\boldsymbol{\mu}_k^T\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}_k + \log(\pi_k)$$
+
+### LDA como reducción de la dimensionalidad
+
+Una ventaja adicional del LDA es que, al trabajar con $K$ enfermedades, podemos reducir el espacio de $p$ dimensiones a un máximo de $K-1$ dimensiones sin perder información útil para la clasificación.
+
+Esto es equivalente a encontrar la proyección que **maximice la varianza entre enfermedades** y **minimice la varianza dentro de cada enfermedad**, lo que puede resolverse como un problema de valores propios de la matriz $W^{-1}B$, donde $W$ es la matriz de variabilidad dentro de los grupos y $B$ la variabilidad entre grupos.
+
+## Análisis Discriminante Cuadrático
+
+En el LDA asumíamos que todas las enfermedades compartían la misma matriz de covarianzas $\boldsymbol{\Sigma}$, es decir, que la dispersión de variables era similar en todos los grupos. El Análisis Discriminante Cuadrático (QDA) relaja este supuesto, permitiendo que cada enfermedad $k$ tenga su propia matriz de covarianzas $\boldsymbol{\Sigma}_k$:
+
+$$X \sim N(\boldsymbol{\mu}_k, \boldsymbol{\Sigma}_k)$$
+
+La función discriminante pasa a ser:
+
+$$\delta_k(x) = -\frac{1}{2}(x - \boldsymbol{\mu}_k)^T\boldsymbol{\Sigma}_k^{-1}(x - \boldsymbol{\mu}_k) - \frac{1}{2}\log|\boldsymbol{\Sigma}_k| + \log(\pi_k)$$
+
+Hablamos de Análisis Discriminante **Cuadrático** porque la función produce fronteras de decisión curvas en lugar de rectas, lo que permite al modelo adaptarse mejor a situaciones donde cada enfermedad presenta una estructura de variabilidad distinta.
+
+### ¿Cuándo usar LDA y cuándo QDA?
+
+La elección entre ambos métodos depende principalmente del tamaño del datosset y de si el supuesto de covarianza común es razonable:
+
+-   Se recomienda **LDA** cuando el número de observaciones es relativamente pequeño, ya que al tener menos parámetros que estimar es un modelo más simple y robusto frente al sobreajuste.
+
+-   Se recomienda **QDA** cuando el conjunto de entrenamiento es muy grande, o cuando la suposición de una matriz de covarianza común para todas las enfermedades es claramente insostenible.
+
+<br>
+
+#### **Álgebra Matricial y Estimación de Covarianzas**
+
+Para comprender cómo los algoritmos procesan nuestra base de datos, es necesario traducir las expresiones algebraicas abstractas a las dimensiones y variables de nuestro estudio.
+
+En nuestro proyecto, el objetivo es clasificar a cada paciente en una de las condiciones médicas (Artritis, Asma, Cáncer, Diabetes, Hipertensión u Obesidad). Para ello, el modelo emplea un conjunto de $p$ variables predictoras principales, como por ejemplo *Age*, *Billing.Amount*, *Days.Admitted*, etc.
+
+#### 1. El Vector de Predictores ($X$)
+Cada paciente $i$ se analiza como un vector columna en un espacio multivariante. En nuestro ejemplo tomamos $p = 10$ variables, el vector de observaciones para un paciente es:
+
+$$X_i = \begin{pmatrix} X_{i, \text{Gender}} \\ X_{i, \text{Blood.Type}} \\X_{i, \text{Insurance}} \\ X_{i, \text{Billing.Amount}} \\ X_{i, \text{Room.Number}} \\ X_{i, \text{Admission.Type}} \\ X_{i, \text{Medication}} \\ X_{i, \text{Test.Results}} \\ X_{i, \text{Age_cat}} \\ X_{i, \text{Days.Admitted}} \end{pmatrix}_{10 \times 1}$$
+
+<br>
+
+#### 2. El Vector de Medias por Grupo ($\boldsymbol{\mu}_k$)
+
+Para cada una de las $K = 6$ enfermedades, el álgebra matricial calcula un **vector de medias**. Por ejemplo, para el grupo de Cáncer ($k = \text{Cáncer}$), el modelo estima el vector:
+
+$$\boldsymbol{\mu}_{\text{Cáncer}} = \begin{pmatrix} \bar{X}_{\text{Cáncer, Age}} \\ \bar{X}_{\text{Cáncer, Gender}} \\ \bar{X}_{\text{Cáncer, Blood.Type}} \\ \bar{X}_{\text{Cáncer, Insurance}} \\ \bar{X}_{\text{Cáncer, Billing}} \\ \bar{X}_{\text{Cáncer, Room}} \\ \bar{X}_{\text{Cáncer, Admission}} \\ \bar{X}_{\text{Cáncer, Medication}} \\ \bar{X}_{\text{Cáncer, Test}} \\ \bar{X}_{\text{Cáncer, Days}} \end{pmatrix}_{10 \times 1}$$
+El algoritmo calcula un total de 6 vectores de medias. Al clasificar a un nuevo paciente, el modelo evaluará a cuál de estos 6 centroides se encuentra más cercano algebraicamente.
+
+<br>
+
+#### 3. Estimación de las Matrices de Covarianza ($\boldsymbol{\Sigma}$ y $\boldsymbol{\Sigma}_k$)
+Este es el componente crítico del análisis multivariante y el que diferencia ambos modelos:
+
+* **En el modelo LDA** se da la homocedasticidad, es decir, se asume que todas las enfermedades comparten la misma estructura de variabilidad. Por ello, el álgebra estima una **única Matriz de Covarianza Común ($\boldsymbol{\Sigma}$)** de dimensión $p \times p$, en nuestro ejemplo vamos a tomar, $3 \times 3$, debido al enorme tamaño que obtendríamos utilizando todas las variables:
+
+$$\boldsymbol{\Sigma} = \begin{pmatrix} 
+\text{Var}(\text{Age}) & \text{Cov}(\text{Age, Billing}) & \text{Cov}(\text{Age, Days}) \\ 
+\text{Cov}(\text{Billing, Age}) & \text{Var}(\text{Billing}) & \text{Cov}(\text{Billing, Days}) \\ 
+\text{Cov}(\text{Days, Age}) & \text{Cov}(\text{Days, Billing}) & \text{Var}(\text{Days}) 
+\end{pmatrix}_{3 \times 3}$$
+
+
+* **En el modelo QDA** se da la heterocedasticidad, es decir, se descarta el supuesto anterior y el algoritmo estima una **Matriz de Covarianza Individual ($\boldsymbol{\Sigma}_k$)** para cada una de las 6 enfermedades. Esto implica calcular **6 matrices independientes** de tamaño $p \times p$.
+
+<br>
+
+#### La Inversa Matricial y la Distancia de Mahalanobis
+
+En las funciones discriminantes interviene la matriz inversa $\boldsymbol{\Sigma}^{-1}$ o $\boldsymbol{\Sigma}_k^{-1}$. Multiplicar el vector de diferencias de un paciente respecto a su media por la inversa de la covarianza:
+
+$$(X - \boldsymbol{\mu}_k)^T \boldsymbol{\Sigma}^{-1} (X - \boldsymbol{\mu}_k)$$
+
+Permite calcular la **Distancia de Mahalanobis**. A diferencia de la distancia euclídea simple, la inversión matricial actúa como un "escalado" que corrige la influencia de las diferentes escalas de medida y ajusta la clasificación según las correlaciones existentes entre las variables, asegurando un análisis estadísticamente riguroso.
+
+<br>
+
+**Cargamos la Base de Datos**
+
+Estos datos los hemos cogido de la página kaggle, en concreto del enlace: https://www.kaggle.com/datasets/prasad22/healthcare-dataset
+
+```{r}
+datos<-read.csv("healthcare_datasett.csv",head=T)
+head(datos)
+```
+
+**Datos Faltantes**
+
+Comprobamos si tenemos datos faltantes:
+
+```{r}
+sum(is.na(datos))
+```
+
+Vemos que no hay datos faltantes, así que no hará falta imputar nada.
+
+<br>
+
+#PREPROCESAMIENTO
+
+Pasamos a factor las variables que nos interesa agrupar.
+
+```{r,warning=FALSE,message=FALSE}
+library(tidyverse)
+
+cortes <- seq(10, 90, by = 5)
+etiquetas <- paste(cortes[-length(cortes)], cortes[-1] - 1, sep = "-")
+
+# Nueva variable categórica 
+datos$Age_cat <- cut(datos$Age, 
+                     breaks = cortes, 
+                     right = FALSE, 
+                     labels = etiquetas)
+
+# Convertir el resto de variables categóricas a factores
+datos$Gender             <- as.factor(datos$Gender)
+datos$Blood.Type         <- as.factor(datos$Blood.Type)
+datos$Medical.Condition  <- as.factor(datos$Medical.Condition)
+datos$Hospital           <- as.factor(datos$Hospital)
+datos$Insurance.Provider <- as.factor(datos$Insurance.Provider)
+datos$Admission.Type     <- as.factor(datos$Admission.Type)
+datos$Medication         <- as.factor(datos$Medication)
+datos$Test.Results       <- as.factor(datos$Test.Results)
+```
+
+
+Vamos a añadir una columna restando la fecha en que salieron del hospital (*Discharge.Date*) con la fecha que entraron (*Date.of.Admission*) para ver cuantos días estuvieron ingresados. Tambien vamos a eliminar las columnas que nos parecen innecesarias, estas son: *Name*, *Doctor*, *Date.of.Admission*, *Discharge.Date*, *Hospital*.
+
+```{r}
+datos$Date.of.Admission <- as.Date(datos$Date.of.Admission)
+datos$Discharge.Date    <- as.Date(datos$Discharge.Date)
+
+datos$Days.Admitted <- as.numeric(datos$Discharge.Date - datos$Date.of.Admission)
+
+datos <- datos[, !names(datos) %in% c("Name", "Doctor", "Date.of.Admission", "Discharge.Date", "Hospital")]
+
+# Dataset que usamos para el Análisis Exploratorio de Datos (con la edad agrupada en intervalos para facilitar su interpretación)
+datos_eda <- datos %>% select(-Age)
+```
+
+Realizamos un resumen para comprobar las variables que tenemos actualmente en la base de datos y ver que son del tipo adecuado
+
+```{r}
+str(datos_eda)
+```
+
+#### **ANÁLISIS EXPLORATORIO DE DATOS**
+
+#### VARIABLE OBJETIVO
+
+Nuestra variable objetivo será Medical.Condition.
+
+```{r,message=FALSE, warning=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(paletteer)
+```
+
+# 1. Distribución de enfermedades
+
+Comenzamos realizando un histograma para ver la cantidad de pacientes que tienen cada enfermedad
+
+```{r}
+ggplot(datos_eda, aes(x = Medical.Condition, fill = Medical.Condition)) +
+  geom_bar() +
+  scale_fill_paletteer_d("vapoRwave::mallSoft") +
+  labs(title = "Distribución de enfermedades", x = "Enfermedad", y = "Número de pacientes") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Podemos observar que la Hipertensión es la enfermedad más común, superando los 15,000 pacientes. Mientras que la condición menos frecuente es el Cáncer con menos de 4,000 pacientes.
+
+<br>
+
+#2. Billing.Amount por enfermedad
+
+Para ver esta comparativa hemos seleccionado un gráfico de cajas, que analiza la relación entre una variable numérica (*Billing.Amount*) y una variable categórica multiclase (*Medical.Condition*).
+
+```{r}
+ggplot(datos_eda, aes(x = Medical.Condition, y = Billing.Amount, fill = Medical.Condition)) +
+  geom_boxplot() +
+  scale_fill_paletteer_d("colorBlindness::paletteMartin") +
+  labs(title = "Importe de facturación por enfermedad", x = "Enfermedad", y = "Importe (€)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+El Cáncer es la enfermedad con el impacto económico más elevado y variable por paciente. Su caja es la más alta, lo que dice que el 50% de los pacientes centrales presenta una gran dispersión en sus costes. Esta variabilidad tiene una mediana situada en los 25000€. Además, en la parte superior se observa unos puntos que llegan a más de 50000€, aunque también muestra algunos puntos atípicos inferiores cerca de los 14000€.
+
+Las enfermedades de Diabetes e Hipertensión muestran un comportamiento homogéneo entre sí. Sus cajas son casi idénticas, lo que refleja que el coste de sus pacientes se comporta de la misma manera. Las medianas están en torno a los 14500€ para la Diabetes y los 14000€ para la Hipertensión. Debido al alto volumen de registros en estas categorías, se observa una alta concentración de valores atípicos en la parte superior, estos costes elevados, asociados a complicaciones médicas, alcanzan los 50000€ en la Diabetes y los 45000€ en la Hipertensión.
+
+La Artritis y la Obesidad son las opciones económicamente más bajas. Ambas destacan por tener las cajas más estrechas y compactas, lo que significa que el gasto del 50% de sus pacientes centrales está agrupado y es muy predecible. Sus medianas son las más bajas, con Artritis cerca de los 9000€ y la Obesidad alrededor de los 11000€. Ambas tienen valores atípicos, la Artritis tiene muchos puntos superiores que llegan a los 40000€, mientras que en la Obesidad llegan hasta los 34000€.
+
+<br>
+
+# 3. Days.Admitted por enfermedad
+
+Para ver esta comparativa tambien hemos seleccionado un gráfico de cajas, que analiza la relación entre una variable numérica (*Days.Admitted*) y una variable categórica multiclase (*Medical.Condition*).
+
+```{r}
+ggplot(datos_eda, aes(x = Medical.Condition, y = Days.Admitted, fill = Medical.Condition)) +
+  geom_boxplot() +
+  scale_fill_paletteer_d("ggthemes::excel_Ion_Boardroom") +
+  labs(title = "Días ingresado por enfermedad", x = "Enfermedad", y = "Días") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+El análisis del Asma revela que es la enfermedad que genera las estancias hospitalarias intermedias más largas del estudio. Su caja es más ancha, lo que refleja una variabilidad en el 50% de los pacientes, cuyos ingresos se mueven entre los 6 y los 14 días. La mediana se encuentra en los 10 días de ingreso. Además, hay puntos atípicos en la parte superior que se extiende desde los 27 días hasta alcanzar un máximo a los 33 días de hospitalización.
+
+Por otra parte, el Cáncer muestra que su caja es un poco más estrecha que la del asma, lo que indica que sus pacientes centrales está más agrupado, entre los 7 y los 12 días de estancia. La mediana se sitúa en los 9 días ingresados. En cuanto a sus puntos atípicos superiores, registra hospitalización con pacientes aislados que llegan a pasar entre 34 y 35 días en el hospital.
+
+En un bloque intermedio y con un comportamiento bastante homogéneo encontramos a la Diabetes y la Hipertensión. Ambas enfermedades muestran cajas con una amplitud vertical muy parecida, lo que denota una dispersión de tiempo similar para sus pacientes. Sin embargo, la Diabetes se posiciona más abajo con una mediana de 7 días, mientras que la Hipertensión muestra su mediana en los 8 días. Ambas patologías comparten puntos atípicos superiores, las cuales ascienden desde los 22 días hasta 34 días para los casos más graves.
+
+Finalmente, la Artritis y la Obesidad son las enfermedades que requieren los periodos de hospitalización más cortos. Sus cajas son las más estrechas y bajas, el 50% de los pacientes se recuperan rápidamente entre los 2 y los 7 días. Las medianas de ambas condiciones se situan la Artritis en los 4 días y la Obesidad en los 5 días. Ambas muestran puntos atípicos superiores desde los 13 o 14 días hasta 33 días de ingreso en pacientes con complicaciones críticas.
+
+<br>
+
+# 4. Test Results por enfermedad
+
+A continuación, realizamos un gráfico de barras apiladas de los resultados del test por enfermedad
+
+```{r}
+ggplot(datos_eda, aes(x = Medical.Condition, fill = Test.Results)) +
+  geom_bar(position = "fill") +
+  scale_fill_paletteer_d("vapoRwave::cool") +
+  labs(title = "Resultados del test por enfermedad", x = "Enfermedad",
+       y = "Proporción", fill = "Resultado") +
+  theme_minimal()
+```
+
+Destacamos que el análisis del Cáncer revela un patrón diferenciado respecto las demás patologías del estudio. Su barra muestra la proporción más pequeña de resultados "Normales" de todo el gráfico, situándose apenas alrededor del 15%. Por el contrario, el segmento de resultados "Abnormal" abarca un 60%, los pacientes con cáncer presenta pruebas claramente alteradas. El fragmento restante, "Inconclusive", ocupa el 25%, siendo el cáncer como la enfermedad con la mayor tasa de positividad o anomalía en los test médicos.
+
+En el extremo opuesto encontramos la Artritis y la Obesidad, las cuales tienen resultados diagnósticos menos peligrosos. La Artritis destaca por tener el segmento "Normal" más grande, alcanzando el 50% de todos sus pacientes, su zona "Inconclusive" y "Abnormal" cubren un 25% cada una. La Obesidad muestra un comportamiento muy similar, con el 45% de resultados "Normales", "Inconclusive" de un 25% y un 30% restante de pruebas alteradas.
+
+Por su parte, el Asma presenta una distribución equilibrada entre sus tres categorías diagnósticas. Con resultados "Normales" en el 40%, "Inconclusive" un 25%, y el 35% restante para la categoría "Abnormal", mostrando que el asma mantiene resultados repartidos, aunque con una tendencia mayor hacia la normalidad que hacia la alteración severa.
+
+Finalmente, la Diabetes y la Hipertensión tienen el segmento "Normal" en el 30%, la Diabetes muestra un segmento "Inconclusive" de un 30%, lo que deja su parte "Abnormal" en un 40%. La Hipertensión, en cambio, reduce sutilmente sus resultados "Inconclusive" a un 25%, lo que hace que "Abnormal" llegue hasta el 45%.
+
+<br>
+
+# 5. Admission Type por enfermedad
+
+Realizamos tambien un gráfico de barras apiladas de los resultados del tipo de ingreso por enfermedad
+
+```{r}
+ggplot(datos_eda, aes(x = Medical.Condition, fill = Admission.Type)) +
+  geom_bar(position = "fill") +
+  scale_fill_paletteer_d("ggthemes::Jewel_Bright") +
+  labs(title = "Tipo de ingreso por enfermedad", x = "Enfermedad",
+       y = "Proporción", fill = "Tipo de ingreso") +
+  theme_minimal()
+```
+
+El análisis de la Artritis y la Obesidad revela un patrón llamativo. La Artritis muestra que el segmento "Elective" es el más grande de todo el gráfico, abarcando un 70% de sus ingresos son programados, su base "Urgent" se queda en un 20% y la franja de "Emergency" ocupa un 10%.
+
+La Obesidad replica la estructura, registrando una base "Urgent" de aproximadamente el 26%, un segmento "Emergency" de un 14%, y un 60% restante en la parte superior destinado a ingresos de tipo "Elective", lo que demuestra que ambas condiciones se manejan mayoritariamente de forma controlada y con cita previa.
+
+El Asma presenta el patrón opuesto, caracterizado por una baja proporción de ingresos programados. Aunque la categoría "Urgent" representa el 40%, el segmento "Emergency" es el más amplio de todo el gráfico con un 45%, elevando el ingreso no planificado al 85%. Como consecuencia, el tipo de ingreso "Elective" se reduce al mínimo del estudio, significando apenas el 15% de los casos.
+
+Por su parte, en la Hipertensión, el segmento "Urgent" es el más alto, alcanzando un 45%. La franja de "Emergency" cubre un 35%, esto produce que la categoría "Elective" tenga un 20%.
+
+Finalmente, el Cáncer y la Diabetes muestran distribuciones intermedias, aunque con sutiles diferencias. El Cáncer tiene su segmento "Urgent" en el 30%, seguido de "Emergency" de un 21%, dejando el 49% restante para ingresos "Elective", lo que refleja un equilibrio entre pacientes que ingresan para cirugías o tratamientos programados y aquellos que sufren crisis agudas.
+
+La Diabetes, en cambio, eleva ligeramente su base "Urgent" hasta el 35% y la zona de "Emergency" un 31%, lo que reduce su segmento "Elective" a un 34%, demostrando que en los procesos diabéticos las descompensaciones urgentes ganan un poco más de terreno frente a las citas planificadas.
+
+<br>
+
+# 6. Edad por enfermedad
+
+Realizamos tambien un gráfico de barras apiladas para ver como se distribuye la edad por enfermedad.
+
+```{r}
+ggplot(datos_eda, aes(x = Age_cat, fill = Medical.Condition)) +
+  geom_bar(position = "fill") +
+  scale_fill_paletteer_d("colorBlindness::paletteMartin") +
+  labs(title = "Distribución de edad por enfermedad", x = "Edad categorizada",
+       y = "Proporción", fill = "Enfermedad") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+El análisis de la Obesidad y el Asma revela un claro predominio en las etapas más jóvenes de la vida, mostrando un descenso drástico a medida que avanza la edad. La Obesidad arranca con fuerza representando un 35% en el grupo de 10-14 años, alcanza su pico máximo rozando el 45% entre los 20 y 24 años, y a partir de ahí se reduce a un segmento de menos del 5% en los grupos de mayores de 75 años.
+
+Por su parte, el Asma muestra un comportamiento mayor en la juventud, un 62% en el tramo de 10-14 años, sin embargo, su espacio se va reduciendo hasta casi desaparecer en la vejez, quedando una franja mínima en la parte superior.
+
+La Artritis y la Hipertensión son las enfermedades más frecuentes de la madurez y la tercera edad. La Artritis es inexistente en los niños y adolescentes, pero empieza a asomarse a los 35-39 años y se expande en los tramos senior, llegando a ocupar un 25% en los pacientes de 80-84 años.
+
+La Hipertensión describe un patrón de crecimiento igual, apenas representa un 2% en los jóvenes de 10-14 años, pero empieza a ensancharse a partir de los 30 años, llegando a ocupar el 40% de toda la distribución en los tramos que van desde los 55 hasta los 89 años.
+
+Finalmente, la Diabetes y el Cáncer muestran perfiles con dinámicas intermedias y muy vinculadas a la mediana edad. La Diabetes aparece en un 2% en la infancia, pero sube durante la etapa adulta, alcanzando un 25% entre los 40 y 54 años, para luego estabilizarse y reducirse en la vejez.
+
+Por su parte, el Cáncer mantiene un comportamiento plano y controlado a lo largo de casi toda la vida; es casi invisible en los primeros grupos de edad y solo logra adquirir una presencia a partir de los 25 años, manteniéndose desde entonces como una franja constante de aproximadamente el 5% al 8% en el resto de tramos.
+
+<br>
+
+#### Partición de datos
+
+A continuación vamos a realizar una partición de la base de datos, en la cua vamos a utilizar el 80% de los datos para entrenar los modelos LDA y QDA, mientras que el 20% de los datos restantes los usará como datos test, serán datos "nuevos" para el modelo que no había visto antes. Para ello usamos la base de datos original, con las edades sin categorizar.
+
+```{r,warning=FALSE,message=FALSE}
+library(caret)
+set.seed(444)
+
+indice_entrenamiento <- createDataPartition(datos$Medical.Condition, p = 0.8, list = FALSE) 
+
+datos_train <- datos[indice_entrenamiento, ] 
+datos_test <- datos[-indice_entrenamiento, ]
+
+datos_train <- datos_train %>% select(-Age_cat)
+datos_test  <- datos_test %>% select(-Age_cat)
+```
+
+<br>
+
+#### **MODELOS**
+
+#### Análisis Discriminante Lineal (LDA)
+
+**1. Entrenamiento del Modelo**
+
+```{r}
+library(MASS) 
+modelo_lda <- lda(Medical.Condition ~ ., data = datos_train) 
+modelo_lda
+```
+
+Obtenemos las probabilidades a priori del modelo de Análisis Discriminante Lineal sobre el conjunto de entrenamiento. Estas indican un desbalanceo en las clases, siendo la Hipertensión (27.5%) y la Diabetes (22.1%) las afecciones mayoritarias, frente al Cáncer que representa una minoría (7.0%).
+
+La descomposición de la varianza muestra un alto grado de eficiencia en la reducción de dimensionalidad. Tenemos que la primera función discriminante (LD1) captura el 58.62% de la separación entre grupos, la segunda (LD2) el 23.72%. Esto implica que proyectando el conjunto de datos multivariante en tan solo dos dimensiones, retenemos más del 82% de la información discriminante original.
+
+<br>
+
+**2. Predicción con los datos test**
+
+```{r}
+predicciones_lda0 <- predict(modelo_lda, newdata = datos_test) 
+predicciones_lda <- predicciones_lda0$class 
+predicciones_lda <- as.factor(predicciones_lda) 
+datos_test$Medical.Condition <- as.factor(datos_test$Medical.Condition)
+```
+
+<br>
+
+**3. Evaluación**
+
+```{r}
+matriz_confusion_lda <- confusionMatrix(predicciones_lda, datos_test$Medical.Condition) 
+matriz_confusion_lda
+```
+
+Tras realizar la matriz de confusión, obtenemos un *Accuracy* del 58.11% y un estadístico Kappa de 0.4796, lo que indica un poder predictivo moderado pero estadísticamente significativo debido al valor obtenido en p-value \< 4.574e-16.
+
+El análisis del rendimiento por clases revela un comportamiento asimétrico. El modelo muestra una capacidad de discriminación casi perfecta para el Cáncer, con una sensibilidad del 93.93% y una especificidad del 98.96%. Por otro lado, enfermades como la Diabetes y la Obesidad presentan las sensibilidades más bajas (45.16% y 51.67%, respectivamente).
+
+<br>
+
+#### Gráfico de dispersión sobre las dos primeras funciones discriminantes (LD1 y LD2)
+
+```{r,warning=FALSE, message=FALSE}
+library(ggplot2)
+
+datos_plot <- data.frame(
+  LD1 = predicciones_lda0$x[,1], 
+  LD2 = predicciones_lda0$x[,2], 
+  Enfermedad = datos_test$Medical.Condition
+)
+
+ggplot(datos_plot, aes(x = LD1, y = LD2, color = Enfermedad)) +
+  geom_point(alpha = 0.7, size = 1.5) +
+  scale_color_paletteer_d("colorBlindness::paletteMartin") + 
+  labs(title = "Proyección de Pacientes en el Espacio Discriminante (LDA)",
+       x = "LD1 (58.62%)",
+       y = "LD2 (23.72%)") +
+  theme_minimal()
+```
+
+El gráfico de dispersión sobre las dos primeras funciones discriminantes (LD1 y LD2) permite inspeccionar visualmente la capacidad de separación del modelo, proyectando el espacio multivariante original en dos dimensiones que concentran el 82.34% de la variabilidad discriminante (correspondiendo el 58.62% en LD1 y el 23.72% en LD2).
+
+Este gráfico permite observar la separación entre grupos. El Cancer es el grupo mejor discriminado, este se proyecta hacia la derecha en LD1 (cuenta con valores positivos altos), separándose bien del resto. Esto sugiere que sus variables clínicas son muy distintas a las demás enfermedades.
+
+Sin embargo, observamos una zona de solapamiento en la izquierda (con LD1 negativo) aquí se encuentran Arthritis, Asthma y Obesity. Esto indica que estas enfermedades comparten perfiles clínicos similares y son más difíciles de clasificar correctamente. Diabetes e Hypertension ocupan una zona intermedia, con cierto solapamiento mutuo.
+
+En conclusión, el modelo LDA tiene una utilidad muy buena para detectar Cancer, pero limitada para distinguir entre las demás enfermedades.
+
+Por lo tanto, es recomendable explorar modelos no lineales para mejorar la separación. Por ello, a continuación vamos a utilizar Análisis Discriminante Cuadrático.
+
+<br>
+
+#### Análisis Discriminante Cuadrático
+
+**1. Entrenamiento del Modelo QDA**
+
+```{r,message=FALSE,warning=FALSE}
+library(MASS) 
+#modelo_qda <- qda(Medical.Condition ~ ., data = datos_train) 
+```
+
+Si ejecutamos tal cual el código obtenemos el siguiente error *Error en qda.default(x, grouping, ...): rank deficiency in group Arthritis*. Esto es debido a que QDA necesita eliminar las variables que no aportan variabilidad.
+
+```{r,message=FALSE,warning=FALSE}
+library(caret)
+
+# Codificamos las variables categóricas en dummies
+dummies <- dummyVars(Medical.Condition ~ ., data = datos_train, fullRank = TRUE)
+
+train_qda <- as.data.frame(predict(dummies, newdata = datos_train))
+train_qda$Medical.Condition <- datos_train$Medical.Condition
+
+test_qda <- as.data.frame(predict(dummies, newdata = datos_test))
+test_qda$Medical.Condition <- datos_test$Medical.Condition
+
+# Eliminamos columnas con varianza casi cero
+nzv <- nearZeroVar(train_qda)
+train_qda <- train_qda[, -nzv]
+test_qda  <- test_qda[,  -nzv]
+```
+
+Ya si podemos aplicar el modelo
+
+```{r}
+modelo_qda <- qda(Medical.Condition ~ ., data = train_qda)
+modelo_qda
+```
+
+Al observar la salida del Análisis Discriminante Cuadrático vemos que las probabilidades a priori coinciden con las del Análisis Discrimante Cuadrático.
+
+El Análisis Discrimante Cuadrático estima una matriz de covarianzas independiente para cada enfermedad, de esta manera las fronteras de decisión dejan de ser hiperplanos lineales y pasan a ser superficies cuadráticas.
+
+<br>
+
+**2. Predicción con los datos test**
+
+```{r}
+predicciones_qda0 <- predict(modelo_qda, newdata = test_qda)
+predicciones_qda  <- predicciones_qda0$class
+predicciones_qda  <- as.factor(predicciones_qda)
+```
+
+<br>
+
+**3. Evaluación**
+
+```{r}
+matriz_confusion_qda <- confusionMatrix(predicciones_qda, test_qda$Medical.Condition)
+matriz_confusion_qda
+```
+
+Tras observar los resultados de la matriz de confusión del Análisis Discriminante Cuadrático sobre el conjunto de test, obtiene un *Accuracy* global del 55.14% y un índice Kappa de 0.4443. Estos resultados representan un peor rendimiento predictivo general en comparación con el modelo lineal (LDA), el cual alcanzaba una precisión del 58.11%.
+
+Destacamos que el comportamiento de **Diabetes** es el más afectado por la estructura cuadrática, viendo su sensibilidad reducida a un 34.54% (frente al 45.16% del LDA). Un comportamiento similar de descenso se aprecia en la **Hipertensión**, cuya sensibilidad disminuye del 62.60% al 61.65%. El **Cáncer** experimenta un retroceso en su tasa de detección con respecto al Análisis Discrimante Lineal, cayendo su sensibilidad del 92.25% al 93.93%, aunque manteniendo una especificidad buenísima (99.33%).
+
+Aunque este modelo tambien detecta mejoras, por ejemplo, en el caso de **Asma**, este se beneficia de la flexibilidad de las fronteras curvas, elevando su sensibilidad del 51.11% al 68.54%.
+
+<br>
+
+#### **Conclusiones y comparativa de modelos**
+
+|Métrica / Clase	           |LDA	    |QDA	   |Ganador  |
+|----------------------------|--------|--------|---------|
+|Accuracy	                   |58.11%	|55.14%	 |LDA      |
+|Kappa	                     |0.4796	|0.4443  |LDA      |
+|Sensibilidad: Artritis   	 |63.88%	|65.35%	 |QDA      |
+|Sensibilidad: Asma	         |55.57%	|58.22%	 |QDA      |
+|Sensibilidad: Cáncer	       |93.93%	|92.25%	 |LDA      |
+|Sensibilidad: Diabetes	     |45.16%	|34.54%	 |LDA      |
+|Sensibilidad: Hipertensión	 |61.65%	|62.60%	 |QDA      |
+|Sensibilidad: Obesidad	     |51.67%	|44.68%	 |LDA      |
+
+Se observa una clara superioridad del Modelo Lineal (LDA), este logra una precisión global (*Accuracy*) notablemente superior (58.11% frente al 55.14% del QDA). 
+
+Aunque el QDA ofrece la ventaja de flexibilizar las fronteras mediante superficies curvas, ha sufrido el impacto del sobreajuste, esto ha sido debido al verse obligado a estimar una matriz de covarianzas independiente para cada una de las seis enfermedades.
+
+Cabe destacar que el Cáncer es la patología que mejor se ha discriminado en todo el estudio, alcanzando su valor más alto con el LDA (93.93% de sensibilidad). El Asma ha sido la única afección que ha mejorado sensiblemente bajo el enfoque cuadrático (pasando de 55.57% a 58.22%).
+
+Como conclusión final, para este conjunto de datos sanitarios se selecciona el **Análisis Discriminante Lineal (LDA)** como el modelo óptimo.
