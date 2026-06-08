@@ -36,3 +36,25 @@ Habilidades técnicas aplicadas:
   Lenguajes: R (readxl, stats, graphics).
   Estadística: Modelos SARIMA, Tests de Normalidad, Pruebas no paramétricas, Chi-cuadrado.
   Herramientas: SPSS (visualización), RStudio, Excel.
+
+## 3. Análisis y Reglas de Asociación de Accidentes de Tráfico en Chicago
+Descripción: Proyecto de minería de datos aplicado a un dataset real de siniestralidad vial en Chicago. El trabajo abarca desde la limpieza de valores nulos y Análisis Exploratorio de Datos (EDA) hasta la aplicación de modelos de aprendizaje no supervisado. Se utiliza el algoritmo Apriori para descubrir reglas de asociación que expliquen bajo qué circunstancias específicas se agrava la siniestralidad.
+
+Herramientas: Python (Pandas, Matplotlib, Seaborn) y Machine Learning (mlxtend para Algoritmo Apriori).
+
+Resultados clave: Identificación de patrones espaciotemporales (horas y días de mayor riesgo) y extracción de insights sobre cómo interactúan variables como las condiciones climáticas, la iluminación y los defectos de la vía en la gravedad de los accidentes.
+
+## 4. Predicción de Victorias en CS:GO mediante Machine Learning
+Descripción: Desarrollo de un proyecto predictivo de clasificación supervisada basado en métricas de partidas del videojuego CS:GO. El objetivo es predecir qué bando (Terrorista o Antiterrorista) ganará la ronda en función de variables como el valor del equipamiento, salud y blindaje. Se evalúan y comparan múltiples algoritmos para encontrar el mejor ajuste.
+
+Herramientas: R, R Markdown y librerías predictivas (caret, randomForest, e1071, class).
+
+Resultados clave: Entrenamiento y comparativa exhaustiva de diversos modelos (Regresión Logística, LDA, QDA, Naive Bayes, KNN, Árboles de Decisión y Random Forest), analizando matrices de confusión y precisión predictiva para determinar el algoritmo óptimo en entornos de eSports.
+
+## 5. Predicción de Riesgo de Ictus Clínico (Modelos LDA y QDA)
+Descripción: Aplicación estadística multivariante orientada al sector salud (Healthcare Data). El proyecto consiste en predecir la probabilidad de que un paciente sufra un accidente cerebrovascular (ictus) basándose en factores de riesgo biométricos e historiales clínicos (edad, hipertensión, niveles de glucosa, IMC y tabaquismo).
+
+Herramientas: R, R Markdown y modelado estadístico avanzado (paquete MASS).
+
+Resultados clave: Implementación, entrenamiento y validación de modelos de Análisis Discriminante Lineal (LDA) y Análisis Discriminante Cuadrático (QDA). Se evalúa el rendimiento clasificatorio de ambos modelos para identificar correctamente a los pacientes de riesgo frente a los sanos, trabajando con asimetrías en los datos.
+
